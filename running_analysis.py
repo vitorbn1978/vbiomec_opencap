@@ -263,7 +263,7 @@ else:
 
 dict_figuras_laudo = {}
 
-# --- 2. CINEMÁTICA ENSEMBLE AVERAGE ---
+# --- 2. CINEMÁTICA ARTICULAR: ENSEMBLE AVERAGE (INCLUINDO PÉLVIS) ---
 st.header("2. Cinemática Articular: Ensemble Average (Média ± SD)")
 
 if file_ik is not None and len(hs_r) >= 2 and len(hs_l) >= 2:
@@ -272,55 +272,163 @@ if file_ik is not None and len(hs_r) >= 2 and len(hs_l) >= 2:
     
     if not in_degrees:
         df_ik[colunas_ik] = df_ik[colunas_ik] * (180.0 / np.pi)
-        
+    
+    # NOVO: Identificar colunas da pélvis
+    colunas_pelvis = [c for c in colunas_ik if 'pelvis' in c.lower() or 'pelvic' in c.lower()]
+    
+    # Identificar articulações (incluindo pélvis)
     pares_ik = sorted(list(set([c[:-2] for c in colunas_ik if c.endswith('_r') or c.endswith('_l')])))
     
-    for art in pares_ik:
-        col_r = f"{art}_r"
-        col_l = f"{art}_l"
-        if col_r in df_ik.columns and col_l in df_ik.columns:
-            ens_r = extrair_ensemble_average(df_ik, 'time', {'Articulacao': col_r}, hs_r)
-            ens_l = extrair_ensemble_average(df_ik, 'time', {'Articulacao': col_l}, hs_l)
-            
-            m_r, std_r = ens_r['Articulacao_mean'], ens_r['Articulacao_std']
-            m_l, std_l = ens_l['Articulacao_mean'], ens_l['Articulacao_std']
-            perc = ens_r['% Ciclo']
-            sp = symmetry_plot(m_r, m_l)
-            
-            fig_ik, ax_ik = plt.subplots(figsize=(6, 3.5))
-            ax_ik.plot(perc, m_r, label='Direito (Média)', color='#02579B', linewidth=2)
-            ax_ik.fill_between(perc, m_r - std_r, m_r + std_r, color='#02579B', alpha=0.2)
-            
-            ax_ik.plot(perc, m_l, label='Esquerdo (Média)', color='#ff9933', linewidth=2)
-            ax_ik.fill_between(perc, m_l - std_l, m_l + std_l, color='#ff9933', alpha=0.2)
-            
-            ax_ik.set_xlabel("% do Ciclo de Marcha")
-            ax_ik.set_ylabel("Ângulo (°)")
-            ax_ik.legend()
-            ax_ik.grid(True, linestyle='--', alpha=0.5)
-            plt.close(fig_ik)
-            dict_figuras_laudo[f"Ensemble Ângulos ({art})"] = fig_ik
-            
-            fig_sym, ax_sym = plt.subplots(figsize=(6, 3.5))
-            ax_sym.scatter(sp['time'], sp['score'], color='gray', alpha=0.3, s=15, label='Bruto')
-            ax_sym.plot(sp['time'], sp['score_smoothed'], color='blue', linewidth=2.5, label='Ajustado')
-            ax_sym.axvline(x=40, color='gray', linestyle='--', label='Off-foot (40%)')
-            ax_sym.set_xlabel("Gait Cycle (%)")
-            ax_sym.set_ylabel("Symmetry Function (%)")
-            ax_sym.legend()
-            ax_sym.grid(True, linestyle='--', alpha=0.5)
-            plt.close(fig_sym)
-            dict_figuras_laudo[f"Função de Simetria ({art})"] = fig_sym
-
-    default_ik = [a for a in ['hip_flexion', 'knee_angle', 'ankle_angle'] if a in pares_ik]
-    art_selecionada = st.selectbox("Selecione a articulação para visualizar na tela:", pares_ik, index=pares_ik.index(default_ik[0]) if default_ik else 0)
+    # Adicionar movimentos da pélvis que não têm sufixo _r/_l
+    movimentos_pelvis = []
+    for col in colunas_pelvis:
+        if 'list' in col.lower():
+            movimentos_pelvis.append('pelvis_list')
+        elif 'tilt' in col.lower():
+            movimentos_pelvis.append('pelvis_tilt')
+        elif 'rotation' in col.lower() or 'rot' in col.lower():
+            movimentos_pelvis.append('pelvis_rotation')
     
-    if f"Ensemble Ângulos ({art_selecionada})" in dict_figuras_laudo:
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            st.pyplot(dict_figuras_laudo[f"Ensemble Ângulos ({art_selecionada})"])
-        with col_g2:
-            st.pyplot(dict_figuras_laudo[f"Função de Simetria ({art_selecionada})"])
+    # Combinar articulações normais com movimentos da pélvis
+    todos_movimentos = pares_ik.copy()
+    for mov in movimentos_pelvis:
+        if mov not in todos_movimentos:
+            todos_movimentos.append(mov)
+    
+    # Processar cada movimento/articulação
+    for art in todos_movimentos:
+        # Verificar se é um movimento da pélvis (sem lado)
+        if art in movimentos_pelvis:
+            # Encontrar a coluna correspondente
+            col_pelvis = None
+            for col in colunas_pelvis:
+                if art.replace('pelvis_', '') in col.lower():
+                    col_pelvis = col
+                    break
+            
+            if col_pelvis and col_pelvis in df_ik.columns:
+                # Para pélvis, usamos o mesmo ciclo para ambos os lados
+                ens_r = extrair_ensemble_average(df_ik, 'time', {'Pelvis': col_pelvis}, hs_r)
+                ens_l = extrair_ensemble_average(df_ik, 'time', {'Pelvis': col_pelvis}, hs_l)
+                
+                if ens_r and ens_l:
+                    m_r, std_r = ens_r['Pelvis_mean'], ens_r['Pelvis_std']
+                    m_l, std_l = ens_l['Pelvis_mean'], ens_l['Pelvis_std']
+                    perc = ens_r['% Ciclo']
+                    
+                    # Função de simetria (comparando ciclos direito e esquerdo)
+                    sp = symmetry_plot(m_r, m_l)
+                    
+                    # Nome legível para o gráfico
+                    nome_legivel = art.replace('_', ' ').title()
+                    
+                    # Gráfico Ensemble
+                    fig_pelvis, ax_pelvis = plt.subplots(figsize=(6, 3.5))
+                    ax_pelvis.plot(perc, m_r, label='Ciclo Direito (Média)', color='#02579B', linewidth=2)
+                    ax_pelvis.fill_between(perc, m_r - std_r, m_r + std_r, color='#02579B', alpha=0.2)
+                    
+                    ax_pelvis.plot(perc, m_l, label='Ciclo Esquerdo (Média)', color='#ff9933', linewidth=2)
+                    ax_pelvis.fill_between(perc, m_l - std_l, m_l + std_l, color='#ff9933', alpha=0.2)
+                    
+                    ax_pelvis.set_xlabel("% do Ciclo de Marcha")
+                    ax_pelvis.set_ylabel("Ângulo (°)")
+                    ax_pelvis.legend()
+                    ax_pelvis.grid(True, linestyle='--', alpha=0.5)
+                    plt.close(fig_pelvis)
+                    dict_figuras_laudo[f"Ensemble Pélvis ({nome_legivel})"] = fig_pelvis
+                    
+                    # Gráfico de Simetria
+                    fig_sym, ax_sym = plt.subplots(figsize=(6, 3.5))
+                    ax_sym.scatter(sp['time'], sp['score'], color='gray', alpha=0.3, s=15, label='Bruto')
+                    ax_sym.plot(sp['time'], sp['score_smoothed'], color='blue', linewidth=2.5, label='Ajustado')
+                    ax_sym.axvline(x=40, color='gray', linestyle='--', label='Off-foot (40%)')
+                    ax_sym.set_xlabel("Gait Cycle (%)")
+                    ax_sym.set_ylabel("Symmetry Function (%)")
+                    ax_sym.legend()
+                    ax_sym.grid(True, linestyle='--', alpha=0.5)
+                    plt.close(fig_sym)
+                    dict_figuras_laudo[f"Simetria Pélvis ({nome_legivel})"] = fig_sym
+        
+        else:
+            # Processamento normal para articulações com lados
+            col_r = f"{art}_r"
+            col_l = f"{art}_l"
+            if col_r in df_ik.columns and col_l in df_ik.columns:
+                ens_r = extrair_ensemble_average(df_ik, 'time', {'Articulacao': col_r}, hs_r)
+                ens_l = extrair_ensemble_average(df_ik, 'time', {'Articulacao': col_l}, hs_l)
+                
+                if ens_r and ens_l:
+                    m_r, std_r = ens_r['Articulacao_mean'], ens_r['Articulacao_std']
+                    m_l, std_l = ens_l['Articulacao_mean'], ens_l['Articulacao_std']
+                    perc = ens_r['% Ciclo']
+                    sp = symmetry_plot(m_r, m_l)
+                    
+                    fig_ik, ax_ik = plt.subplots(figsize=(6, 3.5))
+                    ax_ik.plot(perc, m_r, label='Direito (Média)', color='#02579B', linewidth=2)
+                    ax_ik.fill_between(perc, m_r - std_r, m_r + std_r, color='#02579B', alpha=0.2)
+                    
+                    ax_ik.plot(perc, m_l, label='Esquerdo (Média)', color='#ff9933', linewidth=2)
+                    ax_ik.fill_between(perc, m_l - std_l, m_l + std_l, color='#ff9933', alpha=0.2)
+                    
+                    ax_ik.set_xlabel("% do Ciclo de Marcha")
+                    ax_ik.set_ylabel("Ângulo (°)")
+                    ax_ik.legend()
+                    ax_ik.grid(True, linestyle='--', alpha=0.5)
+                    plt.close(fig_ik)
+                    dict_figuras_laudo[f"Ensemble Ângulos ({art})"] = fig_ik
+                    
+                    fig_sym, ax_sym = plt.subplots(figsize=(6, 3.5))
+                    ax_sym.scatter(sp['time'], sp['score'], color='gray', alpha=0.3, s=15, label='Bruto')
+                    ax_sym.plot(sp['time'], sp['score_smoothed'], color='blue', linewidth=2.5, label='Ajustado')
+                    ax_sym.axvline(x=40, color='gray', linestyle='--', label='Off-foot (40%)')
+                    ax_sym.set_xlabel("Gait Cycle (%)")
+                    ax_sym.set_ylabel("Symmetry Function (%)")
+                    ax_sym.legend()
+                    ax_sym.grid(True, linestyle='--', alpha=0.5)
+                    plt.close(fig_sym)
+                    dict_figuras_laudo[f"Função de Simetria ({art})"] = fig_sym
+
+    # Seleção para visualização
+    opcoes_visualizacao = []
+    
+    # Adicionar articulações normais
+    for art in pares_ik[:5]:  # Limitar a 5 para não sobrecarregar
+        if f"Ensemble Ângulos ({art})" in dict_figuras_laudo:
+            opcoes_visualizacao.append(art)
+    
+    # Adicionar movimentos da pélvis
+    for mov in movimentos_pelvis:
+        nome_legivel = mov.replace('_', ' ').title()
+        if f"Ensemble Pélvis ({nome_legivel})" in dict_figuras_laudo:
+            opcoes_visualizacao.append(f"Pélvis - {nome_legivel}")
+    
+    if opcoes_visualizacao:
+        # Priorizar pélvis se disponível
+        default_idx = 0
+        for i, opt in enumerate(opcoes_visualizacao):
+            if 'pélvis' in opt.lower():
+                default_idx = i
+                break
+        
+        art_selecionada = st.selectbox("Selecione a articulação/movimento para visualizar na tela:", 
+                                      opcoes_visualizacao, 
+                                      index=default_idx)
+        
+        # Verificar se é pélvis ou articulação normal
+        if art_selecionada.startswith("Pélvis - "):
+            nome_pelvis = art_selecionada.replace("Pélvis - ", "")
+            titulo_ensemble = f"Ensemble Pélvis ({nome_pelvis})"
+            titulo_simetria = f"Simetria Pélvis ({nome_pelvis})"
+        else:
+            titulo_ensemble = f"Ensemble Ângulos ({art_selecionada})"
+            titulo_simetria = f"Função de Simetria ({art_selecionada})"
+        
+        if titulo_ensemble in dict_figuras_laudo and titulo_simetria in dict_figuras_laudo:
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                st.pyplot(dict_figuras_laudo[titulo_ensemble])
+            with col_g2:
+                st.pyplot(dict_figuras_laudo[titulo_simetria])
 
 # --- 3. ATUAÇÃO MUSCULAR & POTÊNCIA (ENSEMBLE AVERAGE & SIMETRIA) ---
 st.header("3. Atuação e Potência Muscular: Ensemble Average & Função de Simetria")
@@ -347,35 +455,36 @@ if file_muscles is not None and len(hs_r) >= 2 and len(hs_l) >= 2:
             ens_mr = extrair_ensemble_average(df_musc, 'time', {m_sel: m_r}, hs_r, peso_corporal)
             ens_ml = extrair_ensemble_average(df_musc, 'time', {m_sel: m_l}, hs_l, peso_corporal)
             
-            mr_val, mr_std = ens_mr[f'{m_sel}_mean'], ens_mr[f'{m_sel}_std']
-            ml_val, ml_std = ens_ml[f'{m_sel}_mean'], ens_ml[f'{m_sel}_std']
-            perc = ens_mr['% Ciclo']
-            sp_m = symmetry_plot(mr_val, ml_val)
-            
-            fig_m, ax_m = plt.subplots(figsize=(6, 3.5))
-            ax_m.plot(perc, mr_val, label='Direito (Média)', color='#02579B', linewidth=2)
-            ax_m.fill_between(perc, mr_val - mr_std, mr_val + mr_std, color='#02579B', alpha=0.2)
-            
-            ax_m.plot(perc, ml_val, label='Esquerdo (Média)', color='#ff9933', linewidth=2)
-            ax_m.fill_between(perc, ml_val - ml_std, ml_val + ml_std, color='#ff9933', alpha=0.2)
-            
-            ax_m.set_xlabel("% do Ciclo de Marcha")
-            ax_m.set_ylabel("Ativação / Força (BW)")
-            ax_m.legend()
-            ax_m.grid(True, linestyle='--', alpha=0.5)
-            plt.close(fig_m)
-            dict_figuras_laudo[f"Ensemble Muscular ({m_sel})"] = fig_m
-            
-            fig_msym, ax_msym = plt.subplots(figsize=(6, 3.5))
-            ax_msym.scatter(sp_m['time'], sp_m['score'], color='gray', alpha=0.3, s=15, label='Bruto')
-            ax_msym.plot(sp_m['time'], sp_m['score_smoothed'], color='red', linewidth=2.5, label='Ajustado')
-            ax_msym.axvline(x=40, color='gray', linestyle='--', label='Off-foot (40%)')
-            ax_msym.set_xlabel("Gait Cycle (%)")
-            ax_msym.set_ylabel("Symmetry Function (%)")
-            ax_msym.legend()
-            ax_msym.grid(True, linestyle='--', alpha=0.5)
-            plt.close(fig_msym)
-            dict_figuras_laudo[f"Simetria Muscular ({m_sel})"] = fig_msym
+            if ens_mr and ens_ml:
+                mr_val, mr_std = ens_mr[f'{m_sel}_mean'], ens_mr[f'{m_sel}_std']
+                ml_val, ml_std = ens_ml[f'{m_sel}_mean'], ens_ml[f'{m_sel}_std']
+                perc = ens_mr['% Ciclo']
+                sp_m = symmetry_plot(mr_val, ml_val)
+                
+                fig_m, ax_m = plt.subplots(figsize=(6, 3.5))
+                ax_m.plot(perc, mr_val, label='Direito (Média)', color='#02579B', linewidth=2)
+                ax_m.fill_between(perc, mr_val - mr_std, mr_val + mr_std, color='#02579B', alpha=0.2)
+                
+                ax_m.plot(perc, ml_val, label='Esquerdo (Média)', color='#ff9933', linewidth=2)
+                ax_m.fill_between(perc, ml_val - ml_std, ml_val + ml_std, color='#ff9933', alpha=0.2)
+                
+                ax_m.set_xlabel("% do Ciclo de Marcha")
+                ax_m.set_ylabel("Ativação / Força (BW)")
+                ax_m.legend()
+                ax_m.grid(True, linestyle='--', alpha=0.5)
+                plt.close(fig_m)
+                dict_figuras_laudo[f"Ensemble Muscular ({m_sel})"] = fig_m
+                
+                fig_msym, ax_msym = plt.subplots(figsize=(6, 3.5))
+                ax_msym.scatter(sp_m['time'], sp_m['score'], color='gray', alpha=0.3, s=15, label='Bruto')
+                ax_msym.plot(sp_m['time'], sp_m['score_smoothed'], color='red', linewidth=2.5, label='Ajustado')
+                ax_msym.axvline(x=40, color='gray', linestyle='--', label='Off-foot (40%)')
+                ax_msym.set_xlabel("Gait Cycle (%)")
+                ax_msym.set_ylabel("Symmetry Function (%)")
+                ax_msym.legend()
+                ax_msym.grid(True, linestyle='--', alpha=0.5)
+                plt.close(fig_msym)
+                dict_figuras_laudo[f"Simetria Muscular ({m_sel})"] = fig_msym
 
     for nome_grp, palavras_chave in grupos_padrao.items():
         muscs_grp = [m for m in músculos_disponiveis if any(k in m.lower() for k in palavras_chave)]
@@ -408,7 +517,7 @@ if file_muscles is not None and len(hs_r) >= 2 and len(hs_l) >= 2:
                 
                 fig_gsym, ax_gsym = plt.subplots(figsize=(6, 3.5))
                 ax_gsym.scatter(sp_g['time'], sp_g['score'], color='gray', alpha=0.3, s=15, label='Bruto')
-                ax_gsym.plot(sp_g['time'], sp_gsym_smoothed := sp_g['score_smoothed'], color='red', linewidth=2.5, label='Ajustado')
+                ax_gsym.plot(sp_g['time'], sp_g['score_smoothed'], color='red', linewidth=2.5, label='Ajustado')
                 ax_gsym.axvline(x=40, color='gray', linestyle='--', label='Off-foot (40%)')
                 ax_gsym.set_xlabel("Gait Cycle (%)")
                 ax_gsym.set_ylabel("Symmetry Function (%)")
@@ -429,24 +538,25 @@ if file_power is not None and len(hs_r) >= 2 and len(hs_l) >= 2:
             ens_pr = extrair_ensemble_average(df_pow, 'time', {m_sel: m_r}, hs_r, peso_corporal)
             ens_pl = extrair_ensemble_average(df_pow, 'time', {m_sel: m_l}, hs_l, peso_corporal)
             
-            pr_val, pr_std = ens_pr[f'{m_sel}_mean'], ens_pr[f'{m_sel}_std']
-            pl_val, pl_std = ens_pl[f'{m_sel}_mean'], ens_pl[f'{m_sel}_std']
-            perc = ens_pr['% Ciclo']
-            
-            fig_p, ax_p = plt.subplots(figsize=(6, 3.5))
-            ax_p.plot(perc, pr_val, label='Direito (Média)', color='#02579B', linewidth=2)
-            ax_p.fill_between(perc, pr_val - pr_std, pr_val + pr_std, color='#02579B', alpha=0.2)
-            
-            ax_p.plot(perc, pl_val, label='Esquerdo (Média)', color='#ff9933', linewidth=2)
-            ax_p.fill_between(perc, pl_val - pl_std, pl_val + pl_std, color='#ff9933', alpha=0.2)
-            
-            ax_p.axhline(0, color='black', linestyle='--', linewidth=0.8, alpha=0.7)
-            ax_p.set_xlabel("% do Ciclo de Marcha")
-            ax_p.set_ylabel("Potência Muscular (W/kg)")
-            ax_p.legend()
-            ax_p.grid(True, linestyle='--', alpha=0.5)
-            plt.close(fig_p)
-            dict_figuras_laudo[f"Potência Muscular ({m_sel})"] = fig_p
+            if ens_pr and ens_pl:
+                pr_val, pr_std = ens_pr[f'{m_sel}_mean'], ens_pr[f'{m_sel}_std']
+                pl_val, pl_std = ens_pl[f'{m_sel}_mean'], ens_pl[f'{m_sel}_std']
+                perc = ens_pr['% Ciclo']
+                
+                fig_p, ax_p = plt.subplots(figsize=(6, 3.5))
+                ax_p.plot(perc, pr_val, label='Direito (Média)', color='#02579B', linewidth=2)
+                ax_p.fill_between(perc, pr_val - pr_std, pr_val + pr_std, color='#02579B', alpha=0.2)
+                
+                ax_p.plot(perc, pl_val, label='Esquerdo (Média)', color='#ff9933', linewidth=2)
+                ax_p.fill_between(perc, pl_val - pl_std, pl_val + pl_std, color='#ff9933', alpha=0.2)
+                
+                ax_p.axhline(0, color='black', linestyle='--', linewidth=0.8, alpha=0.7)
+                ax_p.set_xlabel("% do Ciclo de Marcha")
+                ax_p.set_ylabel("Potência Muscular (W/kg)")
+                ax_p.legend()
+                ax_p.grid(True, linestyle='--', alpha=0.5)
+                plt.close(fig_p)
+                dict_figuras_laudo[f"Potência Muscular ({m_sel})"] = fig_p
 
     for nome_grp, palavras_chave in grupos_padrao.items():
         muscs_grp = [m for m in musculos_pow if any(k in m.lower() for k in palavras_chave)]
@@ -518,6 +628,7 @@ with col_l2:
     if graficos_disponiveis:
         termos_default_laudo = [
             'hip_flexion', 'knee_angle', 'ankle_angle',
+            'pelvis', 'list', 'tilt', 'rotation',
             'Quadríceps', 'recfem', 'vaslat',
             'Solear', 'soleus',
             'Glúteo Máximo', 'glmax',
