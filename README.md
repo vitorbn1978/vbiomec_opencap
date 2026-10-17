@@ -1,6 +1,6 @@
 # VBiomec OpenCap
 
-Ferramenta web desenvolvida em **Python** e **Streamlit** para processamento, visualização e emissão de laudos de biomecânica da corrida utilizando dados cinemáticos e cinéticos (como OpenCap e Sport2D).
+Ferramenta web desenvolvida em **Python** e **Streamlit** para processamento, visualização e emissão de laudos de biomecânica da corrida utilizando dados cinemáticos e cinéticos
 
 ## Funcionalidades
 * **Análise Espaço-Temporal**: Métricas detalhadas de tempo de passada, comprimento e cadência.
